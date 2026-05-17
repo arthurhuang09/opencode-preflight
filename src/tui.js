@@ -37,7 +37,7 @@ export async function tui(api) {
 				sendPrompt(
 					api,
 					sessionID,
-					"Call the preflight_config tool to create or repair this project's OpenCode preflight configuration. If files already exist, do not overwrite them unless I explicitly confirm. After finishing, briefly list the created and skipped files.",
+					"Call the preflight_config tool. Create missing OpenCode preflight files, do not overwrite existing files unless I confirm, then list created and skipped files.",
 				);
 			},
 		},
@@ -53,7 +53,7 @@ export async function tui(api) {
 
 				const result = listPreflightActions(api.cwd ?? process.cwd());
 				const lines = [
-					"Review the configured OpenCode preflight actions below.",
+					"List the configured OpenCode preflight actions and ask what to run.",
 					"",
 					"Matched triggers:",
 					...(result.triggers.length
@@ -75,7 +75,7 @@ export async function tui(api) {
 
 				lines.push(
 					"",
-					"Ask me which action to run next using AskUserQuestion/question. Include a `Do not run anything for now` option. If I choose an action, tell me to run `/preflight-action-run <action-id>` or continue only after I confirm.",
+					"Use AskUserQuestion/question with each action id and `Do not run anything for now`. Do not run an action until I confirm.",
 				);
 
 				sendPrompt(api, sessionID, lines.join("\n"));
@@ -97,11 +97,11 @@ export async function tui(api) {
 					api,
 					sessionID,
 					[
-						"Ask me which OpenCode preflight action id to run using AskUserQuestion/question.",
+						"Ask which OpenCode preflight action id to run.",
 						"",
 						`Available action ids: ${ids}`,
 						"",
-						"After I choose an action id, read `.opencode/preflight.jsonc`, load that action's `promptFile` and memory settings, then follow the action instructions. Do not run commands or edit files before I confirm if the action mode is `ask-before-execute`.",
+						"Use AskUserQuestion/question. After I choose, read `.opencode/preflight.jsonc`, load the action `promptFile` and memory, then follow the action mode. For `ask-before-execute`, confirm before commands or edits.",
 					].join("\n"),
 				);
 			},
