@@ -52,6 +52,7 @@ export async function tui(api) {
 				if (!sessionID) return;
 
 				const result = listPreflightActions(api.cwd ?? process.cwd());
+				const availableActions = result.actions.filter((action) => action.available);
 				const lines = [
 					"List the configured OpenCode preflight actions and ask what to run.",
 					"",
@@ -75,7 +76,9 @@ export async function tui(api) {
 
 				lines.push(
 					"",
-					"Use AskUserQuestion/question with each action id and `Do not run anything for now`. Do not run an action until I confirm.",
+					availableActions.length > 0
+						? `Use AskUserQuestion/question with these available action ids: ${availableActions.map((action) => action.id).join(", ")}. Include \`Do not run anything for now\`. Do not run an action until I confirm.`
+						: "No preflight actions are currently available to run. Explain that unavailable actions are suppressed by run state or configuration warnings, and do not ask me to choose an action.",
 				);
 
 				sendPrompt(api, sessionID, lines.join("\n"));
@@ -92,10 +95,26 @@ export async function tui(api) {
 				if (!sessionID) return;
 
 				const result = listPreflightActions(api.cwd ?? process.cwd());
-				const ids = result.actions
-					.filter((action) => action.available)
-					.map((action) => action.id)
-					.join(", ") || "(none)";
+				const availableActions = result.actions.filter((action) => action.available);
+				const warnings = result.warnings.length > 0
+					? ["", "Warnings:", ...result.warnings.map((warning) => `- ${warning}`)]
+					: [];
+
+				if (availableActions.length === 0) {
+					sendPrompt(
+						api,
+						sessionID,
+						[
+							"No OpenCode preflight actions are currently available to run.",
+							"",
+							"Do not ask me to choose an action. Explain that actions may be suppressed by run state or unavailable because of configuration warnings.",
+							...warnings,
+						].join("\n"),
+					);
+					return;
+				}
+
+				const ids = availableActions.map((action) => action.id).join(", ");
 				sendPrompt(
 					api,
 					sessionID,
@@ -103,9 +122,7 @@ export async function tui(api) {
 						"Ask which OpenCode preflight action id to run.",
 						"",
 						`Available action ids: ${ids}`,
-						...(result.warnings.length > 0
-							? ["", "Warnings:", ...result.warnings.map((warning) => `- ${warning}`)]
-							: []),
+						...warnings,
 						"",
 						"Use AskUserQuestion/question. After I choose, read `.opencode/preflight.jsonc`, load the action `promptFile` and memory, then follow the action mode. For `ask-before-execute`, confirm before commands or edits.",
 					].join("\n"),

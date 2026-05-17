@@ -221,7 +221,16 @@ export default async function opencodePreflight({ directory, client }) {
 
     "experimental.chat.system.transform": async (input, output) => {
       const v2 = makeV2Client(client);
-      if (v2 && input.sessionID && (await sessionIsChild(v2, directory, input.sessionID))) return;
+      if (!v2) return;
+
+      try {
+        if (input.sessionID && (await sessionIsChild(v2, directory, input.sessionID))) return;
+      } catch (error) {
+        await logDebug(
+          client,
+          `child session detection failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
 
       const prompt = getPrompt();
       if (!prompt) return;

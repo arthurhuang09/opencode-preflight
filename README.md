@@ -35,6 +35,8 @@ npm install
 
 When a configured trigger matches, the plugin creates a Startup Preflight session and asks which configured action to run. Actions marked `ask-before-execute` require user confirmation before commands or file edits.
 
+From an active session, use `/preflight-action-list` to inspect matched triggers, configured actions, availability, and warnings. Use `/preflight-action-run` to choose one currently available action; actions suppressed by run state are not offered as runnable options.
+
 Set `OPENCODE_PREFLIGHT_AUTOSTART=0` to disable automatic startup sessions while keeping the tool and system prompt integration available.
 
 ## Usage Scenarios
@@ -62,7 +64,7 @@ node --test test/engine.test.js
 
 - `src/index.js` is the default OpenCode plugin entrypoint.
 - `src/engine.js` is exported as `opencode-preflight/engine` for the preflight engine.
-- `src/tui.js` registers the `/preflight-config` TUI command.
+- `src/tui.js` registers the `/preflight-config`, `/preflight-action-list`, and `/preflight-action-run` TUI commands.
 
 ## How It Works
 
@@ -94,6 +96,12 @@ Use the plugin tool `preflight_config` or the `/preflight-config` command to cre
 ```
 
 The tool does not overwrite existing files unless `force: true` is passed.
+
+## TUI Commands
+
+- `/preflight-config` creates or repairs project-local preflight configuration files.
+- `/preflight-action-list` lists matched triggers, configured actions, run-state availability, and warnings.
+- `/preflight-action-run` asks which currently available action to run. If no action is available, it explains why and does not ask for an impossible choice.
 
 ## Autostart Behavior
 

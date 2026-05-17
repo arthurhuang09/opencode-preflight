@@ -283,6 +283,39 @@ test("builds a prompt for one manual preflight action", () => {
   assert.match(result.prompt, /Manual action\./);
 });
 
+test("manual preflight action prompts record run state by default", () => {
+  const cwd = makeProject();
+  writeFileSync(
+    path.join(cwd, ".opencode/preflight.jsonc"),
+    JSON.stringify({
+      enabled: true,
+      actions: {
+        "manual-only": {
+          label: "Manual only",
+          mode: "ask-before-execute",
+          promptFile: ".opencode/preflight/actions/manual-only.md",
+          runState: {
+            enabled: true,
+            skipIfLastRunWithinHours: 20,
+            recordOn: "prompted",
+          },
+        },
+      },
+    }),
+  );
+  writeFileSync(path.join(cwd, ".opencode/preflight/actions/manual-only.md"), "Manual action.");
+
+  const result = buildPreflightActionPrompt(cwd, "manual-only", {
+    now: new Date("2026-05-17T09:00:00.000Z"),
+  });
+
+  assert.equal(result.active, true);
+  const statePath = path.join(cwd, ".opencode/preflight/run-state.json");
+  assert.equal(existsSync(statePath), true);
+  assert.match(readFileSync(statePath, "utf8"), /manual-only/);
+  assert.match(readFileSync(statePath, "utf8"), /promptedAt/);
+});
+
 test("rejects manual preflight action ids that are not own config keys", () => {
   const cwd = makeProject();
   writeFileSync(

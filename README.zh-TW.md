@@ -35,6 +35,8 @@ npm install
 
 當設定的 trigger 命中時，plugin 會建立 Startup Preflight session，並詢問要執行哪個已設定 action。標記為 `ask-before-execute` 的 actions 需要 user 確認後才會執行 commands 或編輯 files。
 
+從 active session 可用 `/preflight-action-list` 檢查 matched triggers、configured actions、availability 與 warnings。使用 `/preflight-action-run` 選擇目前 available 的 action；被 run state suppress 的 actions 不會被當成可執行選項。
+
 設定 `OPENCODE_PREFLIGHT_AUTOSTART=0` 可以停用自動 startup sessions，同時保留 tool 與 system prompt integration。
 
 ## 使用情境
@@ -62,7 +64,7 @@ node --test test/engine.test.js
 
 - `src/index.js` 是預設 OpenCode plugin entrypoint。
 - `src/engine.js` 以 `opencode-preflight/engine` 匯出 preflight engine。
-- `src/tui.js` 註冊 `/preflight-config` TUI command。
+- `src/tui.js` 註冊 `/preflight-config`、`/preflight-action-list` 與 `/preflight-action-run` TUI commands。
 
 ## 運作方式
 
@@ -94,6 +96,12 @@ Engine 會讀取作用中專案的 `.opencode/preflight.jsonc`。當 trigger 命
 ```
 
 除非傳入 `force: true`，否則 tool 不會覆蓋既有檔案。
+
+## TUI Commands
+
+- `/preflight-config` 建立或修復專案內 preflight 設定檔。
+- `/preflight-action-list` 列出 matched triggers、configured actions、run-state availability 與 warnings。
+- `/preflight-action-run` 詢問要執行哪個目前 available 的 action。如果沒有可用 action，會說明原因，不會要求選擇不存在的 action。
 
 ## Autostart 行為
 
