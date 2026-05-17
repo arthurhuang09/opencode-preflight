@@ -501,7 +501,7 @@ export function buildPreflightActionPrompt(cwd, actionId, options = {}) {
     warnings,
   });
 
-  if (options.recordRunState === true) {
+  if (options.recordRunState !== false) {
     recordPromptedActions(cwd, [action], context.now);
   }
 

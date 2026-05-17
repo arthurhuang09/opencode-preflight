@@ -97,6 +97,16 @@ async function sessionHasMessages(v2, directory, sessionID) {
   return Array.isArray(messages) && messages.length > 0;
 }
 
+export function isChildSession(session) {
+  return Boolean(session?.parentID);
+}
+
+async function sessionIsChild(v2, directory, sessionID) {
+  if (!sessionID) return false;
+  const result = await v2.session.get({ directory, sessionID });
+  return isChildSession(unwrapData(result));
+}
+
 async function sendStartupPrompt({ v2, client, directory, sessionId, prompt }) {
   const text = createStartupUserPrompt(prompt);
   if (await sessionHasMessages(v2, directory, sessionId)) return false;
@@ -209,7 +219,10 @@ export default async function opencodePreflight({ directory, client }) {
 			}),
 		},
 
-		"experimental.chat.system.transform": async (_input, output) => {
+    "experimental.chat.system.transform": async (input, output) => {
+      const v2 = makeV2Client(client);
+      if (v2 && input.sessionID && (await sessionIsChild(v2, directory, input.sessionID))) return;
+
       const prompt = getPrompt();
       if (!prompt) return;
       output.system.push(prompt);

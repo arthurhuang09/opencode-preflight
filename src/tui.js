@@ -103,6 +103,9 @@ export async function tui(api) {
 						"Ask which OpenCode preflight action id to run.",
 						"",
 						`Available action ids: ${ids}`,
+						...(result.warnings.length > 0
+							? ["", "Warnings:", ...result.warnings.map((warning) => `- ${warning}`)]
+							: []),
 						"",
 						"Use AskUserQuestion/question. After I choose, read `.opencode/preflight.jsonc`, load the action `promptFile` and memory, then follow the action mode. For `ask-before-execute`, confirm before commands or edits.",
 					].join("\n"),

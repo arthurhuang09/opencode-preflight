@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { buildPreflight, buildPreflightActionPrompt, listPreflightActions } from "../src/engine.js";
+import { isChildSession } from "../src/index.js";
 
 function makeProject() {
   const cwd = mkdtempSync(path.join(tmpdir(), "opencode-preflight-"));
@@ -297,4 +298,9 @@ test("rejects manual preflight action ids that are not own config keys", () => {
   assert.equal(result.active, false);
   assert.equal(result.prompt, "");
   assert.match(result.warnings.join("\n"), /toString/);
+});
+
+test("detects child sessions so subagents can skip preflight injection", () => {
+  assert.equal(isChildSession({ id: "child", parentID: "parent" }), true);
+  assert.equal(isChildSession({ id: "root" }), false);
 });
