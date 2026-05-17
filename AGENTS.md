@@ -6,6 +6,7 @@
 - Run a focused test file with `node --test test/engine.test.js`.
 - `npm run lint` and `npm run typecheck` both use `node --check src/*.js test/*.js`; this is syntax checking, not ESLint or TypeScript.
 - `npm run build` is `npm pack --dry-run` to verify published package contents.
+- GitHub Actions run `lint` and `typecheck` on commits/PRs; `test` and `build` run only on `v*` tag pushes.
 
 ## Project Shape
 - This is an ESM Node package (`"type": "module"`) for an OpenCode startup preflight plugin.
