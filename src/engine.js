@@ -233,7 +233,12 @@ export function loadActions(config, actionIds, cwd) {
   const actions = [];
 
   for (const actionId of actionIds) {
-    const action = config.actions?.[actionId];
+    if (!Object.hasOwn(config.actions ?? {}, actionId)) {
+      warnings.push(`Action '${actionId}' is referenced but not defined.`);
+      continue;
+    }
+
+    const action = config.actions[actionId];
     if (!action) {
       warnings.push(`Action '${actionId}' is referenced but not defined.`);
       continue;
@@ -438,23 +443,25 @@ export function listPreflightActions(cwd, options = {}) {
 
   const context = createContext(cwd, config, options);
   const triggers = matchTriggers(config, context);
-  const actionIds = Object.keys(config.actions ?? {});
+  const configuredActionIds = Object.keys(config.actions ?? {});
+  const matchedActionIds = collectActionIds(triggers);
+  const actionIds = [...new Set([...configuredActionIds, ...matchedActionIds])];
   const loadedActions = loadActions(config, actionIds, cwd);
   const runState = loadRunState(cwd);
   const availableActionIds = new Set(
     filterActionsByRunState(loadedActions.actions, runState, context.now).map((action) => action.id),
   );
-  const matchedActionIds = new Set(collectActionIds(triggers));
+  const matchedActionIdSet = new Set(matchedActionIds);
 
   return {
-    active: actionIds.length > 0,
+    active: configuredActionIds.length > 0,
     triggers,
     warnings: [...loaded.warnings, ...loadedActions.warnings],
     actions: loadedActions.actions.map((action) => ({
       id: action.id,
       label: action.label ?? action.id,
       mode: action.mode ?? "ask-before-execute",
-      matched: matchedActionIds.has(action.id),
+      matched: matchedActionIdSet.has(action.id),
       available: availableActionIds.has(action.id),
       promptFile: action.promptFile,
     })),
@@ -470,6 +477,10 @@ export function buildPreflightActionPrompt(cwd, actionId, options = {}) {
   const config = loaded.config;
   if (config.enabled === false) {
     return { active: false, prompt: "", warnings: [] };
+  }
+
+  if (!Object.hasOwn(config.actions ?? {}, actionId)) {
+    return { active: false, prompt: "", warnings: [`Action '${actionId}' is referenced but not defined.`] };
   }
 
   const context = createContext(cwd, config, options);

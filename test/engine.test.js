@@ -234,6 +234,30 @@ test("lists configured actions with matched and runState availability", () => {
   );
 });
 
+test("lists warnings for matched triggers that reference undefined actions", () => {
+  const cwd = makeProject();
+  writeFileSync(
+    path.join(cwd, ".opencode/preflight.jsonc"),
+    JSON.stringify({
+      enabled: true,
+      triggers: [{ id: "daily", when: {}, actions: ["missing-action"] }],
+      actions: {
+        "manual-only": {
+          label: "Manual only",
+          promptFile: ".opencode/preflight/actions/manual-only.md",
+        },
+      },
+    }),
+  );
+  writeFileSync(path.join(cwd, ".opencode/preflight/actions/manual-only.md"), "Manual action.");
+
+  const result = listPreflightActions(cwd);
+
+  assert.equal(result.active, true);
+  assert.deepEqual(result.actions.map((action) => action.id), ["manual-only"]);
+  assert.match(result.warnings.join("\n"), /missing-action/);
+});
+
 test("builds a prompt for one manual preflight action", () => {
   const cwd = makeProject();
   writeFileSync(
@@ -256,4 +280,21 @@ test("builds a prompt for one manual preflight action", () => {
   assert.equal(result.active, true);
   assert.match(result.prompt, /Manual action: manual-only/);
   assert.match(result.prompt, /Manual action\./);
+});
+
+test("rejects manual preflight action ids that are not own config keys", () => {
+  const cwd = makeProject();
+  writeFileSync(
+    path.join(cwd, ".opencode/preflight.jsonc"),
+    JSON.stringify({
+      enabled: true,
+      actions: {},
+    }),
+  );
+
+  const result = buildPreflightActionPrompt(cwd, "toString", { recordRunState: false });
+
+  assert.equal(result.active, false);
+  assert.equal(result.prompt, "");
+  assert.match(result.warnings.join("\n"), /toString/);
 });

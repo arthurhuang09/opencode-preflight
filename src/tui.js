@@ -92,7 +92,10 @@ export async function tui(api) {
 				if (!sessionID) return;
 
 				const result = listPreflightActions(api.cwd ?? process.cwd());
-				const ids = result.actions.map((action) => action.id).join(", ") || "(none)";
+				const ids = result.actions
+					.filter((action) => action.available)
+					.map((action) => action.id)
+					.join(", ") || "(none)";
 				sendPrompt(
 					api,
 					sessionID,
