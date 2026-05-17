@@ -1,0 +1,45 @@
+{
+  "name": "@arthurhuang09/opencode-preflight",
+  "version": "0.1.0",
+  "description": "Project-configurable startup preflight prompts for OpenCode.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./engine": "./src/engine.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "README.zh-TW.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm pack --dry-run",
+    "lint": "node --check src/*.js test/*.js",
+    "typecheck": "npm run lint",
+    "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arthurhuang09/opencode-preflight.git"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "preflight"
+  ],
+  "author": "Arthur Huang",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/arthurhuang09/opencode-preflight/issues"
+  },
+  "homepage": "https://github.com/arthurhuang09/opencode-preflight#readme",
+  "dependencies": {
+    "@opencode-ai/plugin": "1.14.51",
+    "@opencode-ai/sdk": "1.14.51"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.14.0"
+  }
+}
