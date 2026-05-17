@@ -425,6 +425,78 @@ export function composePrompt({ config, context, triggers, actions, memoryTopics
   return lines.join("\n").trim() + "\n";
 }
 
+export function listPreflightActions(cwd, options = {}) {
+  const loaded = loadConfig(cwd);
+  if (!loaded.config) {
+    return { active: false, actions: [], triggers: [], warnings: loaded.warnings };
+  }
+
+  const config = loaded.config;
+  if (config.enabled === false) {
+    return { active: false, actions: [], triggers: [], warnings: [] };
+  }
+
+  const context = createContext(cwd, config, options);
+  const triggers = matchTriggers(config, context);
+  const actionIds = Object.keys(config.actions ?? {});
+  const loadedActions = loadActions(config, actionIds, cwd);
+  const runState = loadRunState(cwd);
+  const availableActionIds = new Set(
+    filterActionsByRunState(loadedActions.actions, runState, context.now).map((action) => action.id),
+  );
+  const matchedActionIds = new Set(collectActionIds(triggers));
+
+  return {
+    active: actionIds.length > 0,
+    triggers,
+    warnings: [...loaded.warnings, ...loadedActions.warnings],
+    actions: loadedActions.actions.map((action) => ({
+      id: action.id,
+      label: action.label ?? action.id,
+      mode: action.mode ?? "ask-before-execute",
+      matched: matchedActionIds.has(action.id),
+      available: availableActionIds.has(action.id),
+      promptFile: action.promptFile,
+    })),
+  };
+}
+
+export function buildPreflightActionPrompt(cwd, actionId, options = {}) {
+  const loaded = loadConfig(cwd);
+  if (!loaded.config) {
+    return { active: false, prompt: "", warnings: loaded.warnings };
+  }
+
+  const config = loaded.config;
+  if (config.enabled === false) {
+    return { active: false, prompt: "", warnings: [] };
+  }
+
+  const context = createContext(cwd, config, options);
+  const loadedActions = loadActions(config, [actionId], cwd);
+  const action = loadedActions.actions[0];
+  if (!action) {
+    return { active: false, prompt: "", warnings: loadedActions.warnings };
+  }
+
+  const loadedMemory = loadMemoryTopics(config, [action], cwd);
+  const warnings = [...loaded.warnings, ...loadedActions.warnings, ...loadedMemory.warnings];
+  const prompt = composePrompt({
+    config,
+    context,
+    triggers: [{ id: "manual", label: `Manual action: ${action.id}` }],
+    actions: [action],
+    memoryTopics: loadedMemory.topics,
+    warnings,
+  });
+
+  if (options.recordRunState === true) {
+    recordPromptedActions(cwd, [action], context.now);
+  }
+
+  return { active: true, warnings, prompt };
+}
+
 export function buildPreflight(cwd, options = {}) {
   const loaded = loadConfig(cwd);
   if (!loaded.config) {
