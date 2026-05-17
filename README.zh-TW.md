@@ -37,6 +37,15 @@ npm install
 
 設定 `OPENCODE_PREFLIGHT_AUTOSTART=0` 可以停用自動 startup sessions，同時保留 tool 與 system prompt integration。
 
+## 使用情境
+
+- Default branch 啟動：當 OpenCode 在 `main` 或 `master` 啟動時，詢問是否要整理 issues、檢查專案啟動準備，或暫時略過。
+- Feature branch 接續工作：當 OpenCode 在非 default branch 啟動時，先彙整最近 commits、worktree changes 與可能下一步，再詢問要接著做什麼。
+- 每日或每小時例行檢查：用 time triggers 只在指定時間區間顯示 standup 準備、issue triage 或 dependency checks 等 recurring actions。
+- 專案專屬啟動檢查：要求 `package.json`、`AGENTS.md` 或部署設定等檔案存在時，才提供 startup checklist。
+- Memory-backed follow-up：載入 JSON-file memory topics，讓重複 issue review 可以記住等待 user 回覆、等待外部回覆或可關閉的項目。
+- 降低提示噪音：使用 `runState.skipIfLastRunWithinHours`，避免例行 prompts 在短時間內重複出現。
+
 ## 指令
 
 ```sh

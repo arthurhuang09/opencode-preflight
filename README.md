@@ -37,6 +37,15 @@ When a configured trigger matches, the plugin creates a Startup Preflight sessio
 
 Set `OPENCODE_PREFLIGHT_AUTOSTART=0` to disable automatic startup sessions while keeping the tool and system prompt integration available.
 
+## Usage Scenarios
+
+- Default branch startup: when OpenCode starts on `main` or `master`, ask whether to review issues, check project readiness, or skip for now.
+- Feature branch resume: when OpenCode starts on a non-default branch, summarize recent commits, worktree changes, and likely next steps before asking what to continue.
+- Daily or hourly routines: use time triggers to show recurring actions such as standup prep, issue triage, or dependency checks only during a configured time window.
+- Project-specific readiness: require files such as `package.json`, `AGENTS.md`, or deployment config to exist before offering a startup checklist.
+- Memory-backed follow-up: load JSON-file memory topics so repeated issue reviews can remember items waiting on user replies, external replies, or closure.
+- Noise reduction: use `runState.skipIfLastRunWithinHours` so routine prompts do not appear again too soon after they were already shown.
+
 ## Commands
 
 ```sh
