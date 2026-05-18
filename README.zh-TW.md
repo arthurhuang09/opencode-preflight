@@ -8,16 +8,25 @@ OpenCode 的專案可設定啟動前檢查提示。
 
 ## 安裝
 
-將 npm plugin 加到 OpenCode config：
+在目標專案執行 initializer：
 
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@arthurhuang09/opencode-preflight"]
-}
+```sh
+npx @arthurhuang09/opencode-preflight init
 ```
 
-OpenCode 會從 global config (`~/.config/opencode/opencode.json`) 與 project config (`opencode.json`) 載入 npm plugins。npm plugins 會在 OpenCode 啟動時自動安裝。
+這會建立 `.opencode/opencode.json`、`.opencode/package.json` 與 `.opencode/plugins/preflight.js`，並在 `.opencode` 內安裝 npm package。它也會註冊 `/preflight-config`、`/preflight-action-list`、`/preflight-action-run` 與 `/preflight-action-edit`。這個 shim-based install 可以避開 OpenCode 對 scoped package 的 npm plugin loader 問題，同時仍使用 npm 上發布的 package。
+
+如果想同時建立預設 preflight action files：
+
+```sh
+npx @arthurhuang09/opencode-preflight init --with-config
+```
+
+如果只想建立特定 default actions：
+
+```sh
+npx @arthurhuang09/opencode-preflight init --with-config --actions=project-readiness,task-progress-review
+```
 
 此 repository 的本機開發安裝：
 
@@ -27,15 +36,15 @@ npm install
 
 ## 使用方式
 
-1. 在 OpenCode config 的 `plugin` array 加入 `@arthurhuang09/opencode-preflight`。
-2. 在目標專案啟動 OpenCode。
-3. 從 active session 執行 `/preflight-config`，或要求 OpenCode 呼叫 `preflight_config` tool。
+1. 在目標專案執行 `npx @arthurhuang09/opencode-preflight init`。
+2. 在該專案啟動 OpenCode。
+3. 從 active session 執行 `/preflight-config`，選擇要建立哪些 default actions，或要求 OpenCode 呼叫 `preflight_config` tool。
 4. 檢查產生的 `.opencode/preflight.jsonc` 與 `.opencode/preflight/*` files。
 5. 在該專案重啟 OpenCode，或開啟新的 OpenCode session。
 
 當設定的 trigger 命中時，plugin 會建立 Startup Preflight session，並詢問要執行哪個已設定 action。標記為 `ask-before-execute` 的 actions 需要 user 確認後才會執行 commands 或編輯 files。
 
-從 active session 可用 `/preflight-action-list` 檢查 matched triggers、configured actions、availability 與 warnings。使用 `/preflight-action-run` 選擇目前 available 的 action；被 run state suppress 的 actions 不會被當成可執行選項。
+從 active session 可用 `/preflight-action-list` 檢查 matched triggers、configured actions、availability 與 warnings。使用 `/preflight-action-run` 選擇目前 available 的 action；被 run state suppress 的 actions 不會被當成可執行選項。使用 `/preflight-action-edit` 調整單一 action 的行為、prompt file、run state、memory 與 trigger references。
 
 設定 `OPENCODE_PREFLIGHT_AUTOSTART=0` 可以停用自動 startup sessions，同時保留 tool 與 system prompt integration。
 
@@ -97,11 +106,65 @@ Engine 會讀取作用中專案的 `.opencode/preflight.jsonc`。當 trigger 命
 
 除非傳入 `force: true`，否則 tool 不會覆蓋既有檔案。
 
+Default action templates 可選：`issue-review`、`project-readiness`、`task-progress-review`。如果沒有提供 action list，會建立全部 default templates。
+
+## 手動安裝
+
+如果不想使用 `npx`，可以自行建立這些檔案。
+
+`.opencode/opencode.json`：
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "command": {
+    "preflight-config": {
+      "description": "Create or repair OpenCode preflight config files",
+      "template": "Ask which default OpenCode preflight actions to create: issue-review, project-readiness, task-progress-review, or all. Then call the preflight_config tool with the selected action ids. Do not overwrite existing files unless I confirm, then list created and skipped files."
+    },
+    "preflight-action-list": {
+      "description": "List configured preflight actions and current status",
+      "template": "Call the preflight_action_list tool and summarize the configured OpenCode preflight actions. This is status-only; do not run an action or ask me to choose one."
+    },
+    "preflight-action-run": {
+      "description": "Choose and run an available preflight action",
+      "template": "Call the preflight_action_list tool. If no actions are available, explain why and do not ask me to choose one. Otherwise use AskUserQuestion/question with the available action ids and `Do not run anything for now`. After I choose an action, call the preflight_action_prompt tool with that action id, then follow the returned prompt. For ask-before-execute actions, confirm before commands or edits."
+    },
+    "preflight-action-edit": {
+      "description": "Edit a configured preflight action and its triggers",
+      "template": "Help me edit one configured OpenCode preflight action. First read `.opencode/preflight.jsonc` and list the configured action ids. Ask which action to edit and what to change: behavior, prompt file, runState, memory, or trigger conditions/references. Then update only the relevant `.opencode/preflight.jsonc` fields and action prompt file. Do not run the action. After editing, summarize the changed files and behavior."
+    }
+  }
+}
+```
+
+`.opencode/package.json`：
+
+```json
+{
+  "type": "module",
+  "dependencies": {
+    "@arthurhuang09/opencode-preflight": "latest"
+  }
+}
+```
+
+`.opencode/plugins/preflight.js`：
+
+```js
+import preflight from "@arthurhuang09/opencode-preflight";
+
+export default preflight;
+```
+
+接著在 `.opencode` 裡執行 `npm install`。
+
 ## TUI Commands
 
 - `/preflight-config` 建立或修復專案內 preflight 設定檔。
 - `/preflight-action-list` 列出 matched triggers、configured actions、run-state availability 與 warnings。
 - `/preflight-action-run` 詢問要執行哪個目前 available 的 action。如果沒有可用 action，會說明原因，不會要求選擇不存在的 action。
+- `/preflight-action-edit` 編輯單一 configured action 的行為、prompt file、run state、memory 與 trigger references，但不執行 action。
 
 ## Autostart 行為
 

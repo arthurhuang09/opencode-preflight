@@ -3,8 +3,8 @@ import { tool } from "@opencode-ai/plugin";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { configurePreflight } from "./configure.js";
-import { buildPreflight, buildPreflightActionPrompt } from "./engine.js";
+import { configurePreflight, DEFAULT_ACTION_IDS } from "./configure.js";
+import { buildPreflight, buildPreflightActionPrompt, listPreflightActions } from "./engine.js";
 
 const injectedSessions = new Set();
 const AUTO_STARTED_KEY = "__opencodePreflightAutoStarted";
@@ -224,9 +224,13 @@ export default async function opencodePreflight({ directory, client }) {
 						.boolean()
 						.optional()
 						.describe("Overwrite existing preflight files when true. Defaults to false."),
+					actions: tool.schema
+						.array(tool.schema.enum(DEFAULT_ACTION_IDS))
+						.optional()
+						.describe("Default action templates to create. Defaults to all templates."),
 				},
 				async execute(args) {
-					const result = configurePreflight(directory, { force: args.force === true });
+					const result = configurePreflight(directory, { force: args.force === true, actions: args.actions });
 					return [
 						"Preflight configuration complete.",
 						`Created/updated: ${result.created.length ? result.created.join(", ") : "(none)"}`,
@@ -248,6 +252,36 @@ export default async function opencodePreflight({ directory, client }) {
 						`Preflight action '${args.actionID}' is not available.`,
 						...(result.warnings.length > 0 ? ["", "Warnings:", ...result.warnings.map((warning) => `- ${warning}`)] : []),
 					].join("\n");
+				},
+			}),
+			preflight_action_list: tool({
+				description: "List configured OpenCode preflight actions, matched triggers, availability, and warnings.",
+				args: {},
+				execute() {
+					const result = listPreflightActions(directory);
+					const lines = [
+						`Active: ${result.active}`,
+						...(result.inactiveReason ? [`Inactive reason: ${result.inactiveReason}`] : []),
+						"",
+						"Matched triggers:",
+						...(result.triggers.length
+							? result.triggers.map((trigger) => `- ${trigger.id}: ${trigger.label ?? trigger.id}`)
+							: ["- (none)"]),
+						"",
+						"Actions:",
+						...(result.actions.length
+							? result.actions.map(
+									(action) =>
+										`- ${action.id}: ${action.label} [mode=${action.mode}, matched=${action.matched}, available=${action.available}]`,
+								)
+							: ["- (none)"]),
+					];
+
+					if (result.warnings.length > 0) {
+						lines.push("", "Warnings:", ...result.warnings.map((warning) => `- ${warning}`));
+					}
+
+					return lines.join("\n");
 				},
 			}),
 		},
