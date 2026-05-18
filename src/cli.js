@@ -6,6 +6,12 @@ function printUsage() {
 }
 
 const [, , command, ...args] = process.argv;
+const actionArg = args.find((arg) => arg.startsWith("--actions="));
+const actions = actionArg
+  ?.slice("--actions=".length)
+  .split(",")
+  .map((action) => action.trim())
+  .filter(Boolean);
 
 if (command !== "init") {
   printUsage();
@@ -15,13 +21,8 @@ if (command !== "init") {
 const options = {
   force: args.includes("--force"),
   install: !args.includes("--no-install"),
-  withConfig: args.includes("--with-config"),
-  actions: args
-    .find((arg) => arg.startsWith("--actions="))
-    ?.slice("--actions=".length)
-    .split(",")
-    .map((action) => action.trim())
-    .filter(Boolean),
+  withConfig: args.includes("--with-config") || Boolean(actions?.length),
+  actions,
 };
 
 try {

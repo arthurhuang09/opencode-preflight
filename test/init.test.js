@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -95,4 +96,18 @@ test("warns when legacy opencode.jsonc exists", () => {
   const result = initPreflightProject(cwd, { install: false });
 
   assert.match(result.warnings.join("\n"), /opencode\.jsonc/);
+});
+
+test("CLI actions option implies with-config", () => {
+  const cwd = makeProject();
+
+  execFileSync(
+    process.execPath,
+    [path.join(import.meta.dirname, "../src/cli.js"), "init", "--no-install", "--actions=project-readiness"],
+    { cwd, stdio: "pipe" },
+  );
+
+  assert.equal(existsSync(path.join(cwd, ".opencode/preflight.jsonc")), true);
+  assert.equal(existsSync(path.join(cwd, ".opencode/preflight/actions/project-readiness.md")), true);
+  assert.equal(existsSync(path.join(cwd, ".opencode/preflight/actions/issue-review.md")), false);
 });
