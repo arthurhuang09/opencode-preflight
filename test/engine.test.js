@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { buildPreflight, buildPreflightActionPrompt, listPreflightActions } from "../src/engine.js";
-import { isChildSession } from "../src/index.js";
+import { appendPreflightSystemPrompt, isChildSession } from "../src/index.js";
 
 function makeProject() {
   const cwd = mkdtempSync(path.join(tmpdir(), "opencode-preflight-"));
@@ -259,6 +259,23 @@ test("lists warnings for matched triggers that reference undefined actions", () 
   assert.match(result.warnings.join("\n"), /missing-action/);
 });
 
+test("lists warnings for inherited trigger action ids", () => {
+  const cwd = makeProject();
+  writeFileSync(
+    path.join(cwd, ".opencode/preflight.jsonc"),
+    JSON.stringify({
+      enabled: true,
+      triggers: [{ id: "daily", when: {}, actions: ["toString"] }],
+      actions: {},
+    }),
+  );
+
+  const result = listPreflightActions(cwd);
+
+  assert.equal(result.active, false);
+  assert.match(result.warnings.join("\n"), /toString/);
+});
+
 test("builds a prompt for one manual preflight action", () => {
   const cwd = makeProject();
   writeFileSync(
@@ -336,4 +353,24 @@ test("rejects manual preflight action ids that are not own config keys", () => {
 test("detects child sessions so subagents can skip preflight injection", () => {
   assert.equal(isChildSession({ id: "child", parentID: "parent" }), true);
   assert.equal(isChildSession({ id: "root" }), false);
+});
+
+test("system transform skips child sessions", async () => {
+  const output = { system: [] };
+  const v2 = {
+    session: {
+      get: async () => ({ data: { id: "child", parentID: "parent" } }),
+    },
+  };
+
+  await appendPreflightSystemPrompt({
+    v2,
+    client: {},
+    directory: "/tmp/project",
+    sessionID: "child",
+    getPrompt: () => "preflight prompt",
+    output,
+  });
+
+  assert.deepEqual(output.system, []);
 });

@@ -433,12 +433,18 @@ export function composePrompt({ config, context, triggers, actions, memoryTopics
 export function listPreflightActions(cwd, options = {}) {
   const loaded = loadConfig(cwd);
   if (!loaded.config) {
-    return { active: false, actions: [], triggers: [], warnings: loaded.warnings };
+    return {
+      active: false,
+      inactiveReason: loaded.warnings.length > 0 ? "invalid-config" : "missing-config",
+      actions: [],
+      triggers: [],
+      warnings: loaded.warnings,
+    };
   }
 
   const config = loaded.config;
   if (config.enabled === false) {
-    return { active: false, actions: [], triggers: [], warnings: [] };
+    return { active: false, inactiveReason: "disabled", actions: [], triggers: [], warnings: [] };
   }
 
   const context = createContext(cwd, config, options);
@@ -455,6 +461,7 @@ export function listPreflightActions(cwd, options = {}) {
 
   return {
     active: configuredActionIds.length > 0,
+    inactiveReason: configuredActionIds.length > 0 ? undefined : "no-actions",
     triggers,
     warnings: [...loaded.warnings, ...loadedActions.warnings],
     actions: loadedActions.actions.map((action) => ({

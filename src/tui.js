@@ -22,6 +22,19 @@ function sendPrompt(api, sessionID, text) {
 	});
 }
 
+function inactiveActionMessage(result) {
+	if (result.inactiveReason === "missing-config") {
+		return "OpenCode preflight is not configured in this project. Run /preflight-config first.";
+	}
+	if (result.inactiveReason === "invalid-config") {
+		return "OpenCode preflight configuration could not be parsed. Fix the warnings before running actions.";
+	}
+	if (result.inactiveReason === "disabled") {
+		return "OpenCode preflight is disabled in this project. Enable it in .opencode/preflight.jsonc before running actions.";
+	}
+	return "No OpenCode preflight actions are configured in this project.";
+}
+
 export async function tui(api) {
 	api.command.register(() => [
 		{
@@ -52,9 +65,8 @@ export async function tui(api) {
 				if (!sessionID) return;
 
 				const result = listPreflightActions(api.cwd ?? process.cwd());
-				const availableActions = result.actions.filter((action) => action.available);
 				const lines = [
-					"List the configured OpenCode preflight actions and ask what to run.",
+					"List the configured OpenCode preflight actions. This is status-only; do not ask what to run.",
 					"",
 					"Matched triggers:",
 					...(result.triggers.length
@@ -74,12 +86,7 @@ export async function tui(api) {
 					lines.push("", "Warnings:", ...result.warnings.map((warning) => `- ${warning}`));
 				}
 
-				lines.push(
-					"",
-					availableActions.length > 0
-						? `Use AskUserQuestion/question with these available action ids: ${availableActions.map((action) => action.id).join(", ")}. Include \`Do not run anything for now\`. Do not run an action until I confirm.`
-						: "No preflight actions are currently available to run. Explain that unavailable actions are suppressed by run state or configuration warnings, and do not ask me to choose an action.",
-				);
+				lines.push("", "Do not run an action or ask me to choose one from this list command.");
 
 				sendPrompt(api, sessionID, lines.join("\n"));
 			},
@@ -99,6 +106,20 @@ export async function tui(api) {
 				const warnings = result.warnings.length > 0
 					? ["", "Warnings:", ...result.warnings.map((warning) => `- ${warning}`)]
 					: [];
+
+				if (!result.active) {
+					sendPrompt(
+						api,
+						sessionID,
+						[
+							inactiveActionMessage(result),
+							"",
+							"Do not ask me to choose an action.",
+							...warnings,
+						].join("\n"),
+					);
+					return;
+				}
 
 				if (availableActions.length === 0) {
 					sendPrompt(
@@ -124,7 +145,7 @@ export async function tui(api) {
 						`Available action ids: ${ids}`,
 						...warnings,
 						"",
-						"Use AskUserQuestion/question. After I choose, read `.opencode/preflight.jsonc`, load the action `promptFile` and memory, then follow the action mode. For `ask-before-execute`, confirm before commands or edits.",
+						"Use AskUserQuestion/question. After I choose, call the preflight_action_prompt tool with that action id, then follow the returned prompt. For ask-before-execute actions, confirm before commands or edits.",
 					].join("\n"),
 				);
 			},
