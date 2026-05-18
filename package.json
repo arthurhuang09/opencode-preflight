@@ -1,6 +1,6 @@
 {
   "name": "@arthurhuang09/opencode-preflight",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Project-configurable startup preflight prompts for OpenCode.",
   "type": "module",
   "main": "src/index.js",
