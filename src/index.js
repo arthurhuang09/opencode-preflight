@@ -241,7 +241,7 @@ export default async function opencodePreflight({ directory, client }) {
 					actionID: tool.schema.string().describe("The configured preflight action id to run."),
 				},
 				execute(args) {
-					const result = buildPreflightActionPrompt(directory, args.actionID);
+					const result = buildPreflightActionPrompt(directory, args.actionID, { recordEvent: "selected" });
 					if (result.active) return result.prompt;
 
 					return [

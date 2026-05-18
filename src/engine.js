@@ -339,28 +339,33 @@ export function filterActionsByRunState(actions, runState, now) {
   });
 }
 
-export function recordPromptedActions(cwd, actions, now) {
-  const promptedActions = actions.filter(
-    (action) => action.runState?.enabled && (action.runState.recordOn ?? "prompted") === "prompted",
+export function recordActions(cwd, actions, now, event = "prompted") {
+  const field = event === "selected" ? "selectedAt" : "promptedAt";
+  const matchingActions = actions.filter(
+    (action) => action.runState?.enabled && (action.runState.recordOn ?? "prompted") === event,
   );
-  if (promptedActions.length === 0) return;
+  if (matchingActions.length === 0) return;
 
   const runState = loadRunState(cwd);
   runState.version = 1;
   runState.updatedAt = now.toISOString();
   runState.actions ??= {};
 
-  for (const action of promptedActions) {
+  for (const action of matchingActions) {
     const key = runStateKey(action);
     runState.actions[key] = {
       ...(runState.actions[key] ?? {}),
-      promptedAt: now.toISOString(),
+      [field]: now.toISOString(),
     };
   }
 
   const filePath = path.join(cwd, RUN_STATE_PATH);
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, `${JSON.stringify(runState, null, 2)}\n`, "utf8");
+}
+
+export function recordPromptedActions(cwd, actions, now) {
+  recordActions(cwd, actions, now, "prompted");
 }
 
 export function composePrompt({ config, context, triggers, actions, memoryTopics, warnings }) {
@@ -509,7 +514,7 @@ export function buildPreflightActionPrompt(cwd, actionId, options = {}) {
   });
 
   if (options.recordRunState !== false) {
-    recordPromptedActions(cwd, [action], context.now);
+    recordActions(cwd, [action], context.now, options.recordEvent ?? "prompted");
   }
 
   return { active: true, warnings, prompt };
