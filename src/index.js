@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { configurePreflight } from "./configure.js";
-import { buildPreflight } from "./engine.js";
+import { buildPreflight, buildPreflightActionPrompt } from "./engine.js";
 
 const injectedSessions = new Set();
 const AUTO_STARTED_KEY = "__opencodePreflightAutoStarted";
@@ -97,6 +97,16 @@ async function sessionHasMessages(v2, directory, sessionID) {
   return Array.isArray(messages) && messages.length > 0;
 }
 
+export function isChildSession(session) {
+  return Boolean(session?.parentID);
+}
+
+async function sessionIsChild(v2, directory, sessionID) {
+  if (!sessionID) return false;
+  const result = await v2.session.get({ directory, sessionID });
+  return isChildSession(unwrapData(result));
+}
+
 async function sendStartupPrompt({ v2, client, directory, sessionId, prompt }) {
   const text = createStartupUserPrompt(prompt);
   if (await sessionHasMessages(v2, directory, sessionId)) return false;
@@ -119,6 +129,23 @@ async function sendStartupPrompt({ v2, client, directory, sessionId, prompt }) {
   }
 
   return true;
+}
+
+export async function appendPreflightSystemPrompt({ v2, client, directory, sessionID, getPrompt, output }) {
+  if (!v2) return;
+
+  try {
+    if (sessionID && (await sessionIsChild(v2, directory, sessionID))) return;
+  } catch (error) {
+    await logDebug(
+      client,
+      `child session detection failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  const prompt = getPrompt();
+  if (!prompt) return;
+  output.system.push(prompt);
 }
 
 export default async function opencodePreflight({ directory, client }) {
@@ -207,12 +234,33 @@ export default async function opencodePreflight({ directory, client }) {
 					].join("\n");
 				},
 			}),
+			preflight_action_prompt: tool({
+				description:
+					"Build and record the prompt for one configured OpenCode preflight action.",
+				args: {
+					actionID: tool.schema.string().describe("The configured preflight action id to run."),
+				},
+				execute(args) {
+					const result = buildPreflightActionPrompt(directory, args.actionID, { recordEvent: "selected" });
+					if (result.active) return result.prompt;
+
+					return [
+						`Preflight action '${args.actionID}' is not available.`,
+						...(result.warnings.length > 0 ? ["", "Warnings:", ...result.warnings.map((warning) => `- ${warning}`)] : []),
+					].join("\n");
+				},
+			}),
 		},
 
-		"experimental.chat.system.transform": async (_input, output) => {
-      const prompt = getPrompt();
-      if (!prompt) return;
-      output.system.push(prompt);
+    "experimental.chat.system.transform": async (input, output) => {
+      await appendPreflightSystemPrompt({
+        v2: makeV2Client(client),
+        client,
+        directory,
+        sessionID: input.sessionID,
+        getPrompt,
+        output,
+      });
     },
 
     event: async ({ event }) => {

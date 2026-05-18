@@ -3,7 +3,8 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { buildPreflight } from "../src/engine.js";
+import { buildPreflight, buildPreflightActionPrompt, listPreflightActions } from "../src/engine.js";
+import { appendPreflightSystemPrompt, isChildSession } from "../src/index.js";
 
 function makeProject() {
   const cwd = mkdtempSync(path.join(tmpdir(), "opencode-preflight-"));
@@ -191,4 +192,223 @@ test("action runState records prompted actions and skips recent prompts", () => 
 
   const third = buildPreflight(cwd, { now: new Date("2026-05-18T06:00:01.000Z") });
   assert.equal(third.active, true);
+});
+
+test("lists configured actions with matched and runState availability", () => {
+  const cwd = makeProject();
+  writeFileSync(
+    path.join(cwd, ".opencode/preflight.jsonc"),
+    JSON.stringify({
+      enabled: true,
+      defaultBranches: [""],
+      triggers: [{ id: "daily", label: "Daily", when: {}, actions: ["daily-check"] }],
+      actions: {
+        "daily-check": {
+          label: "Daily check",
+          promptFile: ".opencode/preflight/actions/daily-check.md",
+          runState: {
+            enabled: true,
+            skipIfLastRunWithinHours: 20,
+            recordOn: "prompted",
+          },
+        },
+        "manual-only": {
+          label: "Manual only",
+          promptFile: ".opencode/preflight/actions/manual-only.md",
+        },
+      },
+    }),
+  );
+  writeFileSync(path.join(cwd, ".opencode/preflight/actions/daily-check.md"), "Check daily items.");
+  writeFileSync(path.join(cwd, ".opencode/preflight/actions/manual-only.md"), "Manual action.");
+
+  buildPreflight(cwd, { now: new Date("2026-05-17T09:00:00.000Z") });
+  const result = listPreflightActions(cwd, { now: new Date("2026-05-17T10:00:00.000Z") });
+
+  assert.equal(result.active, true);
+  assert.deepEqual(
+    result.actions.map((action) => ({ id: action.id, matched: action.matched, available: action.available })),
+    [
+      { id: "daily-check", matched: true, available: false },
+      { id: "manual-only", matched: false, available: true },
+    ],
+  );
+});
+
+test("lists warnings for matched triggers that reference undefined actions", () => {
+  const cwd = makeProject();
+  writeFileSync(
+    path.join(cwd, ".opencode/preflight.jsonc"),
+    JSON.stringify({
+      enabled: true,
+      triggers: [{ id: "daily", when: {}, actions: ["missing-action"] }],
+      actions: {
+        "manual-only": {
+          label: "Manual only",
+          promptFile: ".opencode/preflight/actions/manual-only.md",
+        },
+      },
+    }),
+  );
+  writeFileSync(path.join(cwd, ".opencode/preflight/actions/manual-only.md"), "Manual action.");
+
+  const result = listPreflightActions(cwd);
+
+  assert.equal(result.active, true);
+  assert.deepEqual(result.actions.map((action) => action.id), ["manual-only"]);
+  assert.match(result.warnings.join("\n"), /missing-action/);
+});
+
+test("lists warnings for inherited trigger action ids", () => {
+  const cwd = makeProject();
+  writeFileSync(
+    path.join(cwd, ".opencode/preflight.jsonc"),
+    JSON.stringify({
+      enabled: true,
+      triggers: [{ id: "daily", when: {}, actions: ["toString"] }],
+      actions: {},
+    }),
+  );
+
+  const result = listPreflightActions(cwd);
+
+  assert.equal(result.active, false);
+  assert.match(result.warnings.join("\n"), /toString/);
+});
+
+test("builds a prompt for one manual preflight action", () => {
+  const cwd = makeProject();
+  writeFileSync(
+    path.join(cwd, ".opencode/preflight.jsonc"),
+    JSON.stringify({
+      enabled: true,
+      actions: {
+        "manual-only": {
+          label: "Manual only",
+          mode: "ask-before-execute",
+          promptFile: ".opencode/preflight/actions/manual-only.md",
+        },
+      },
+    }),
+  );
+  writeFileSync(path.join(cwd, ".opencode/preflight/actions/manual-only.md"), "Manual action.");
+
+  const result = buildPreflightActionPrompt(cwd, "manual-only", { recordRunState: false });
+
+  assert.equal(result.active, true);
+  assert.match(result.prompt, /Manual action: manual-only/);
+  assert.match(result.prompt, /Manual action\./);
+});
+
+test("manual preflight action prompts record run state by default", () => {
+  const cwd = makeProject();
+  writeFileSync(
+    path.join(cwd, ".opencode/preflight.jsonc"),
+    JSON.stringify({
+      enabled: true,
+      actions: {
+        "manual-only": {
+          label: "Manual only",
+          mode: "ask-before-execute",
+          promptFile: ".opencode/preflight/actions/manual-only.md",
+          runState: {
+            enabled: true,
+            skipIfLastRunWithinHours: 20,
+            recordOn: "prompted",
+          },
+        },
+      },
+    }),
+  );
+  writeFileSync(path.join(cwd, ".opencode/preflight/actions/manual-only.md"), "Manual action.");
+
+  const result = buildPreflightActionPrompt(cwd, "manual-only", {
+    now: new Date("2026-05-17T09:00:00.000Z"),
+  });
+
+  assert.equal(result.active, true);
+  const statePath = path.join(cwd, ".opencode/preflight/run-state.json");
+  assert.equal(existsSync(statePath), true);
+  assert.match(readFileSync(statePath, "utf8"), /manual-only/);
+  assert.match(readFileSync(statePath, "utf8"), /promptedAt/);
+});
+
+test("manual preflight action prompts can record selected run state", () => {
+  const cwd = makeProject();
+  writeFileSync(
+    path.join(cwd, ".opencode/preflight.jsonc"),
+    JSON.stringify({
+      enabled: true,
+      actions: {
+        "manual-only": {
+          label: "Manual only",
+          mode: "ask-before-execute",
+          promptFile: ".opencode/preflight/actions/manual-only.md",
+          runState: {
+            enabled: true,
+            skipIfLastRunWithinHours: 20,
+            recordOn: "selected",
+          },
+        },
+      },
+    }),
+  );
+  writeFileSync(path.join(cwd, ".opencode/preflight/actions/manual-only.md"), "Manual action.");
+
+  const first = listPreflightActions(cwd, { now: new Date("2026-05-17T09:00:00.000Z") });
+  assert.equal(first.actions[0].available, true);
+
+  const result = buildPreflightActionPrompt(cwd, "manual-only", {
+    now: new Date("2026-05-17T09:00:00.000Z"),
+    recordEvent: "selected",
+  });
+
+  assert.equal(result.active, true);
+  const statePath = path.join(cwd, ".opencode/preflight/run-state.json");
+  assert.match(readFileSync(statePath, "utf8"), /selectedAt/);
+
+  const second = listPreflightActions(cwd, { now: new Date("2026-05-17T10:00:00.000Z") });
+  assert.equal(second.actions[0].available, false);
+});
+
+test("rejects manual preflight action ids that are not own config keys", () => {
+  const cwd = makeProject();
+  writeFileSync(
+    path.join(cwd, ".opencode/preflight.jsonc"),
+    JSON.stringify({
+      enabled: true,
+      actions: {},
+    }),
+  );
+
+  const result = buildPreflightActionPrompt(cwd, "toString", { recordRunState: false });
+
+  assert.equal(result.active, false);
+  assert.equal(result.prompt, "");
+  assert.match(result.warnings.join("\n"), /toString/);
+});
+
+test("detects child sessions so subagents can skip preflight injection", () => {
+  assert.equal(isChildSession({ id: "child", parentID: "parent" }), true);
+  assert.equal(isChildSession({ id: "root" }), false);
+});
+
+test("system transform skips child sessions", async () => {
+  const output = { system: [] };
+  const v2 = {
+    session: {
+      get: async () => ({ data: { id: "child", parentID: "parent" } }),
+    },
+  };
+
+  await appendPreflightSystemPrompt({
+    v2,
+    client: {},
+    directory: "/tmp/project",
+    sessionID: "child",
+    getPrompt: () => "preflight prompt",
+    output,
+  });
+
+  assert.deepEqual(output.system, []);
 });

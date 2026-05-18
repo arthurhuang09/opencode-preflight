@@ -233,7 +233,12 @@ export function loadActions(config, actionIds, cwd) {
   const actions = [];
 
   for (const actionId of actionIds) {
-    const action = config.actions?.[actionId];
+    if (!Object.hasOwn(config.actions ?? {}, actionId)) {
+      warnings.push(`Action '${actionId}' is referenced but not defined.`);
+      continue;
+    }
+
+    const action = config.actions[actionId];
     if (!action) {
       warnings.push(`Action '${actionId}' is referenced but not defined.`);
       continue;
@@ -334,28 +339,33 @@ export function filterActionsByRunState(actions, runState, now) {
   });
 }
 
-export function recordPromptedActions(cwd, actions, now) {
-  const promptedActions = actions.filter(
-    (action) => action.runState?.enabled && (action.runState.recordOn ?? "prompted") === "prompted",
+export function recordActions(cwd, actions, now, event = "prompted") {
+  const field = event === "selected" ? "selectedAt" : "promptedAt";
+  const matchingActions = actions.filter(
+    (action) => action.runState?.enabled && (action.runState.recordOn ?? "prompted") === event,
   );
-  if (promptedActions.length === 0) return;
+  if (matchingActions.length === 0) return;
 
   const runState = loadRunState(cwd);
   runState.version = 1;
   runState.updatedAt = now.toISOString();
   runState.actions ??= {};
 
-  for (const action of promptedActions) {
+  for (const action of matchingActions) {
     const key = runStateKey(action);
     runState.actions[key] = {
       ...(runState.actions[key] ?? {}),
-      promptedAt: now.toISOString(),
+      [field]: now.toISOString(),
     };
   }
 
   const filePath = path.join(cwd, RUN_STATE_PATH);
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, `${JSON.stringify(runState, null, 2)}\n`, "utf8");
+}
+
+export function recordPromptedActions(cwd, actions, now) {
+  recordActions(cwd, actions, now, "prompted");
 }
 
 export function composePrompt({ config, context, triggers, actions, memoryTopics, warnings }) {
@@ -423,6 +433,91 @@ export function composePrompt({ config, context, triggers, actions, memoryTopics
   }
 
   return lines.join("\n").trim() + "\n";
+}
+
+export function listPreflightActions(cwd, options = {}) {
+  const loaded = loadConfig(cwd);
+  if (!loaded.config) {
+    return {
+      active: false,
+      inactiveReason: loaded.warnings.length > 0 ? "invalid-config" : "missing-config",
+      actions: [],
+      triggers: [],
+      warnings: loaded.warnings,
+    };
+  }
+
+  const config = loaded.config;
+  if (config.enabled === false) {
+    return { active: false, inactiveReason: "disabled", actions: [], triggers: [], warnings: [] };
+  }
+
+  const context = createContext(cwd, config, options);
+  const triggers = matchTriggers(config, context);
+  const configuredActionIds = Object.keys(config.actions ?? {});
+  const matchedActionIds = collectActionIds(triggers);
+  const actionIds = [...new Set([...configuredActionIds, ...matchedActionIds])];
+  const loadedActions = loadActions(config, actionIds, cwd);
+  const runState = loadRunState(cwd);
+  const availableActionIds = new Set(
+    filterActionsByRunState(loadedActions.actions, runState, context.now).map((action) => action.id),
+  );
+  const matchedActionIdSet = new Set(matchedActionIds);
+
+  return {
+    active: configuredActionIds.length > 0,
+    inactiveReason: configuredActionIds.length > 0 ? undefined : "no-actions",
+    triggers,
+    warnings: [...loaded.warnings, ...loadedActions.warnings],
+    actions: loadedActions.actions.map((action) => ({
+      id: action.id,
+      label: action.label ?? action.id,
+      mode: action.mode ?? "ask-before-execute",
+      matched: matchedActionIdSet.has(action.id),
+      available: availableActionIds.has(action.id),
+      promptFile: action.promptFile,
+    })),
+  };
+}
+
+export function buildPreflightActionPrompt(cwd, actionId, options = {}) {
+  const loaded = loadConfig(cwd);
+  if (!loaded.config) {
+    return { active: false, prompt: "", warnings: loaded.warnings };
+  }
+
+  const config = loaded.config;
+  if (config.enabled === false) {
+    return { active: false, prompt: "", warnings: [] };
+  }
+
+  if (!Object.hasOwn(config.actions ?? {}, actionId)) {
+    return { active: false, prompt: "", warnings: [`Action '${actionId}' is referenced but not defined.`] };
+  }
+
+  const context = createContext(cwd, config, options);
+  const loadedActions = loadActions(config, [actionId], cwd);
+  const action = loadedActions.actions[0];
+  if (!action) {
+    return { active: false, prompt: "", warnings: loadedActions.warnings };
+  }
+
+  const loadedMemory = loadMemoryTopics(config, [action], cwd);
+  const warnings = [...loaded.warnings, ...loadedActions.warnings, ...loadedMemory.warnings];
+  const prompt = composePrompt({
+    config,
+    context,
+    triggers: [{ id: "manual", label: `Manual action: ${action.id}` }],
+    actions: [action],
+    memoryTopics: loadedMemory.topics,
+    warnings,
+  });
+
+  if (options.recordRunState !== false) {
+    recordActions(cwd, [action], context.now, options.recordEvent ?? "prompted");
+  }
+
+  return { active: true, warnings, prompt };
 }
 
 export function buildPreflight(cwd, options = {}) {
