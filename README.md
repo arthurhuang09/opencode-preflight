@@ -8,16 +8,25 @@ This package is a local proof of concept for an OpenCode plugin that builds a st
 
 ## Install
 
-Add the npm plugin to your OpenCode config:
+Run the initializer from your target project:
 
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@arthurhuang09/opencode-preflight"]
-}
+```sh
+npx @arthurhuang09/opencode-preflight init
 ```
 
-OpenCode loads npm plugins from global config (`~/.config/opencode/opencode.json`) and project config (`opencode.json`). Npm plugins are installed automatically by OpenCode at startup.
+This creates `.opencode/opencode.json`, `.opencode/package.json`, and `.opencode/plugins/preflight.js`, then installs the npm package under `.opencode`. It also registers `/preflight-config`, `/preflight-action-list`, `/preflight-action-run`, and `/preflight-action-edit`. The shim-based install avoids OpenCode npm plugin loader issues with scoped packages while still using the published npm package.
+
+To also create the default preflight action files immediately:
+
+```sh
+npx @arthurhuang09/opencode-preflight init --with-config
+```
+
+To create only specific default actions:
+
+```sh
+npx @arthurhuang09/opencode-preflight init --with-config --actions=project-readiness,task-progress-review
+```
 
 For local development of this repository:
 
@@ -27,15 +36,15 @@ npm install
 
 ## Usage
 
-1. Add `@arthurhuang09/opencode-preflight` to the `plugin` array in your OpenCode config.
-2. Start OpenCode in the target project.
-3. Run `/preflight-config` from an active session, or ask OpenCode to call the `preflight_config` tool.
+1. Run `npx @arthurhuang09/opencode-preflight init` in the target project.
+2. Start OpenCode in that project.
+3. Run `/preflight-config` from an active session, choose which default actions to create, or ask OpenCode to call the `preflight_config` tool.
 4. Review the generated `.opencode/preflight.jsonc` and `.opencode/preflight/*` files.
 5. Restart or open a new OpenCode session in that project.
 
 When a configured trigger matches, the plugin creates a Startup Preflight session and asks which configured action to run. Actions marked `ask-before-execute` require user confirmation before commands or file edits.
 
-From an active session, use `/preflight-action-list` to inspect matched triggers, configured actions, availability, and warnings. Use `/preflight-action-run` to choose one currently available action; actions suppressed by run state are not offered as runnable options.
+From an active session, use `/preflight-action-list` to inspect matched triggers, configured actions, availability, and warnings. Use `/preflight-action-run` to choose one currently available action; actions suppressed by run state are not offered as runnable options. Use `/preflight-action-edit` to adjust one action's behavior, prompt file, run state, memory, and trigger references.
 
 Set `OPENCODE_PREFLIGHT_AUTOSTART=0` to disable automatic startup sessions while keeping the tool and system prompt integration available.
 
@@ -97,11 +106,65 @@ Use the plugin tool `preflight_config` or the `/preflight-config` command to cre
 
 The tool does not overwrite existing files unless `force: true` is passed.
 
+The default action templates are selectable: `issue-review`, `project-readiness`, and `task-progress-review`. If no action list is provided, all default templates are created.
+
+## Manual Install
+
+If you do not want to use `npx`, create these files yourself.
+
+`.opencode/opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "command": {
+    "preflight-config": {
+      "description": "Create or repair OpenCode preflight config files",
+      "template": "Ask which default OpenCode preflight actions to create: issue-review, project-readiness, task-progress-review, or all. Then call the preflight_config tool with the selected action ids. Do not overwrite existing files unless I confirm, then list created and skipped files."
+    },
+    "preflight-action-list": {
+      "description": "List configured preflight actions and current status",
+      "template": "Call the preflight_action_list tool and summarize the configured OpenCode preflight actions. This is status-only; do not run an action or ask me to choose one."
+    },
+    "preflight-action-run": {
+      "description": "Choose and run an available preflight action",
+      "template": "Call the preflight_action_list tool. If no actions are available, explain why and do not ask me to choose one. Otherwise use AskUserQuestion/question with the available action ids and `Do not run anything for now`. After I choose an action, call the preflight_action_prompt tool with that action id, then follow the returned prompt. For ask-before-execute actions, confirm before commands or edits."
+    },
+    "preflight-action-edit": {
+      "description": "Edit a configured preflight action and its triggers",
+      "template": "Help me edit one configured OpenCode preflight action. First read `.opencode/preflight.jsonc` and list the configured action ids. Ask which action to edit and what to change: behavior, prompt file, runState, memory, or trigger conditions/references. Then update only the relevant `.opencode/preflight.jsonc` fields and action prompt file. Do not run the action. After editing, summarize the changed files and behavior."
+    }
+  }
+}
+```
+
+`.opencode/package.json`:
+
+```json
+{
+  "type": "module",
+  "dependencies": {
+    "@arthurhuang09/opencode-preflight": "latest"
+  }
+}
+```
+
+`.opencode/plugins/preflight.js`:
+
+```js
+import preflight from "@arthurhuang09/opencode-preflight";
+
+export default preflight;
+```
+
+Then run `npm install` inside `.opencode`.
+
 ## TUI Commands
 
 - `/preflight-config` creates or repairs project-local preflight configuration files.
 - `/preflight-action-list` lists matched triggers, configured actions, run-state availability, and warnings.
 - `/preflight-action-run` asks which currently available action to run. If no action is available, it explains why and does not ask for an impossible choice.
+- `/preflight-action-edit` edits one configured action's behavior, prompt file, run state, memory, and trigger references without running it.
 
 ## Autostart Behavior
 

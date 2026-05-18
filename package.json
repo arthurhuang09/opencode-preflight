@@ -4,9 +4,13 @@
   "description": "Project-configurable startup preflight prompts for OpenCode.",
   "type": "module",
   "main": "src/index.js",
+  "bin": {
+    "opencode-preflight": "./src/cli.js"
+  },
   "exports": {
     ".": "./src/index.js",
-    "./engine": "./src/engine.js"
+    "./engine": "./src/engine.js",
+    "./init": "./src/init.js"
   },
   "files": [
     "src",
