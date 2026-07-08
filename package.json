@@ -20,7 +20,7 @@
   ],
   "scripts": {
     "build": "npm pack --dry-run",
-    "lint": "node --check src/*.js test/*.js",
+    "lint": "for f in src/*.js test/*.js; do node --check \"$f\" || exit 1; done",
     "typecheck": "npm run lint",
     "test": "node --test"
   },
