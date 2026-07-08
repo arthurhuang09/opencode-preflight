@@ -8,6 +8,14 @@ import { buildPreflight, buildPreflightActionPrompt, listPreflightActions } from
 
 const injectedSessions = new Set();
 const AUTO_STARTED_KEY = "__opencodePreflightAutoStarted";
+const MAX_TRACKED_SESSIONS = 100;
+
+function rememberSession(set, sessionID) {
+  set.add(sessionID);
+  while (set.size > MAX_TRACKED_SESSIONS) {
+    set.delete(set.values().next().value);
+  }
+}
 
 function hasExplicitSessionArg(argv = process.argv) {
 	return argv.some((arg) => arg === "-s" || arg === "--session" || arg.startsWith("--session="));
@@ -81,7 +89,7 @@ function isSessionCreatedEvent(event) {
 }
 
 function getSessionId(event) {
-  return event?.properties?.sessionID || event?.data?.sessionID || "";
+  return event?.properties?.sessionID || event?.properties?.info?.id || event?.data?.sessionID || "";
 }
 
 function unwrapData(result) {
@@ -148,13 +156,57 @@ export async function appendPreflightSystemPrompt({ v2, client, directory, sessi
   output.system.push(prompt);
 }
 
-export default async function opencodePreflight({ directory, client }) {
+export async function handleSessionCreatedPreflight({ event, v2, client, directory, getPrompt }) {
+  if (!isSessionCreatedEvent(event)) return false;
+
+  const sessionId = getSessionId(event);
+  if (!sessionId) return false;
+  if (injectedSessions.has(sessionId)) return false;
+  rememberSession(injectedSessions, sessionId);
+
+  try {
+    const prompt = getPrompt();
+    if (!prompt || !v2) return false;
+
+    if (await sessionIsChild(v2, directory, sessionId)) return false;
+    const submitted = await sendStartupPrompt({ v2, client, directory, sessionId, prompt });
+    if (!submitted) return false;
+
+    await client?.app
+      ?.log?.({
+        body: {
+          service: "opencode-preflight",
+          level: "info",
+          message: `session.created prompt submitted to ${sessionId}`,
+        },
+      })
+      .catch?.(() => {});
+    return true;
+  } catch (error) {
+    await client?.app
+      ?.log?.({
+        body: {
+          service: "opencode-preflight",
+          level: "error",
+          message: `session.created prompt failed: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      })
+      .catch?.(() => {});
+    return false;
+  }
+}
+
+export default async function opencodePreflight({ directory, worktree, client }) {
+  const root = worktree || directory;
   let cachedPrompt = null;
   globalThis[AUTO_STARTED_KEY] ??= new Set();
+  const pendingSessionsKey = "__opencodePreflightPendingSessions";
+  globalThis[pendingSessionsKey] ??= new Set();
+  const pendingSessions = globalThis[pendingSessionsKey];
 
   function getPrompt() {
     if (cachedPrompt !== null) return cachedPrompt;
-    const result = buildPreflight(directory);
+    const result = buildPreflight(root);
     cachedPrompt = result.active ? result.prompt : "";
     return cachedPrompt;
   }
@@ -168,8 +220,8 @@ export default async function opencodePreflight({ directory, client }) {
 		);
 
 		if (!shouldAutoStart()) return;
-		if (globalThis[AUTO_STARTED_KEY].has(directory)) return;
-		globalThis[AUTO_STARTED_KEY].add(directory);
+		if (globalThis[AUTO_STARTED_KEY].has(root)) return;
+		globalThis[AUTO_STARTED_KEY].add(root);
 
     const prompt = getPrompt();
     if (!prompt) return;
@@ -179,15 +231,15 @@ export default async function opencodePreflight({ directory, client }) {
 
     try {
       const created = await v2.session.create({
-        directory,
+        directory: root,
         title: "Startup Preflight",
       });
       const session = unwrapData(created);
       const sessionId = session?.id;
       if (!sessionId) return;
 
-      injectedSessions.add(sessionId);
-      await sendStartupPrompt({ v2, client, directory, sessionId, prompt });
+      rememberSession(injectedSessions, sessionId);
+      await sendStartupPrompt({ v2, client, directory: root, sessionId, prompt });
       await client?.app
         ?.log?.({
           body: {
@@ -230,7 +282,7 @@ export default async function opencodePreflight({ directory, client }) {
 						.describe("Default action templates to create. Defaults to all templates."),
 				},
 				async execute(args) {
-					const result = configurePreflight(directory, { force: args.force === true, actions: args.actions });
+					const result = configurePreflight(root, { force: args.force === true, actions: args.actions });
 					return [
 						"Preflight configuration complete.",
 						`Created/updated: ${result.created.length ? result.created.join(", ") : "(none)"}`,
@@ -245,7 +297,7 @@ export default async function opencodePreflight({ directory, client }) {
 					actionID: tool.schema.string().describe("The configured preflight action id to run."),
 				},
 				execute(args) {
-					const result = buildPreflightActionPrompt(directory, args.actionID, { recordEvent: "selected" });
+					const result = buildPreflightActionPrompt(root, args.actionID, { recordEvent: "selected" });
 					if (result.active) return result.prompt;
 
 					return [
@@ -258,7 +310,7 @@ export default async function opencodePreflight({ directory, client }) {
 				description: "List configured OpenCode preflight actions, matched triggers, availability, and warnings.",
 				args: {},
 				execute() {
-					const result = listPreflightActions(directory);
+					const result = listPreflightActions(root);
 					const lines = [
 						`Active: ${result.active}`,
 						...(result.inactiveReason ? [`Inactive reason: ${result.inactiveReason}`] : []),
@@ -290,7 +342,7 @@ export default async function opencodePreflight({ directory, client }) {
       await appendPreflightSystemPrompt({
         v2: makeV2Client(client),
         client,
-        directory,
+        directory: root,
         sessionID: input.sessionID,
         getPrompt,
         output,
@@ -301,8 +353,20 @@ export default async function opencodePreflight({ directory, client }) {
       if (!isSessionCreatedEvent(event)) return;
 
       const sessionId = getSessionId(event);
-      if (injectedSessions.has(sessionId)) return;
-      injectedSessions.add(sessionId);
+      if (!sessionId || pendingSessions.has(sessionId)) return;
+      rememberSession(pendingSessions, sessionId);
+
+      try {
+        await handleSessionCreatedPreflight({
+          event,
+          v2: makeV2Client(client),
+          client,
+          directory: root,
+          getPrompt,
+        });
+      } finally {
+        pendingSessions.delete(sessionId);
+      }
     },
   };
 }

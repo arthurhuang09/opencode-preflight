@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { buildPreflight, buildPreflightActionPrompt, listPreflightActions } from "../src/engine.js";
-import { appendPreflightSystemPrompt, isChildSession } from "../src/index.js";
+import { appendPreflightSystemPrompt, handleSessionCreatedPreflight, isChildSession } from "../src/index.js";
 
 function makeProject() {
   const cwd = mkdtempSync(path.join(tmpdir(), "opencode-preflight-"));
@@ -411,4 +411,75 @@ test("system transform skips child sessions", async () => {
   });
 
   assert.deepEqual(output.system, []);
+});
+
+test("session.created event submits startup prompt", async () => {
+  const prompts = [];
+  const logs = [];
+  const v2 = {
+    session: {
+      get: async () => ({ data: { id: "root" } }),
+      messages: async () => ({ data: [] }),
+      promptAsync: async (input) => {
+        prompts.push(input);
+      },
+    },
+  };
+  const client = {
+    app: {
+      log: async (input) => {
+        logs.push(input);
+      },
+    },
+  };
+
+  const submitted = await handleSessionCreatedPreflight({
+    event: { type: "session.created", properties: { info: { id: "root" } } },
+    v2,
+    client,
+    directory: "/tmp/project",
+    getPrompt: () => "preflight prompt",
+  });
+
+  assert.equal(submitted, true);
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].sessionID, "root");
+  assert.equal(prompts[0].directory, "/tmp/project");
+  assert.match(prompts[0].parts[0].text, /preflight prompt/);
+  assert.match(logs[0].body.message, /session.created prompt submitted/);
+});
+
+test("session.created event ignores prompt build failures", async () => {
+  const prompts = [];
+  const logs = [];
+  const v2 = {
+    session: {
+      get: async () => ({ data: { id: "root" } }),
+      messages: async () => ({ data: [] }),
+      promptAsync: async (input) => {
+        prompts.push(input);
+      },
+    },
+  };
+  const client = {
+    app: {
+      log: async (input) => {
+        logs.push(input);
+      },
+    },
+  };
+
+  const submitted = await handleSessionCreatedPreflight({
+    event: { type: "session.created", properties: { info: { id: "root-fail" } } },
+    v2,
+    client,
+    directory: "/tmp/project",
+    getPrompt: () => {
+      throw new Error("bad config");
+    },
+  });
+
+  assert.equal(submitted, false);
+  assert.equal(prompts.length, 0);
+  assert.match(logs[0].body.message, /session.created prompt failed: bad config/);
 });
